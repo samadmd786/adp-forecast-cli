@@ -1,14 +1,14 @@
 # ADP National Employment Report Tracker and Forecaster
 
-A small command line tool that downloads the ADP National Employment Report
-history, shows the published headline numbers, forecasts next month's headline
-change, and explains in plain language how that forecast was made. Forecasting
-uses only numpy and pandas, by design: the headline series is a single, already
-seasonally adjusted monthly line, and simple baselines are the right tool for it.
+A small command line tool that downloads the ADP National Employment Report,
+shows the recent numbers, predicts next month's jobs change, and explains the
+prediction in plain words. The forecasting uses only numpy and pandas. The data
+is a single monthly series that is already seasonally adjusted, so simple methods
+work well and a heavy library is not needed.
 
 ## Install and run
 
-From a clean clone (Python 3.10 or newer):
+You need Python 3.10 or newer. From a fresh clone:
 
 ```bash
 python3 -m venv .venv
@@ -16,62 +16,69 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-Then try the four commands. The first run downloads the data once into a
-gitignored `data/` directory; later runs reuse it offline.
+Then try the four commands. The first run downloads the data once into a `data/`
+folder (which is gitignored). After that, every run reuses the saved copy and
+works offline.
 
 ```bash
 adp history --rows 8          # recent published numbers
 adp forecast                  # next month's predicted change and level
 adp explain                   # why the forecast is what it is
-adp evaluate                  # backtest metrics for every model
+adp evaluate                  # how the models score against each other
 ```
 
-Every command accepts `--json` for machine readable output, and a shared set of
-data source flags: `--input PATH` (use a local zip or csv instead of the
-network), `--url URL` (override the download URL), and `--refresh` (force a fresh
-download). For example, to run fully offline against a local file:
+Every command also takes `--json` for machine readable output, plus three flags
+for where the data comes from:
+
+- `--input PATH` use a local zip or csv instead of downloading
+- `--url URL` use a different download link
+- `--refresh` download a fresh copy even if one is saved
+
+For example, to run fully offline from a file you already have:
 
 ```bash
 adp history --input /path/to/ADP_NER_history.zip
 ```
 
-## What the headline number is
+## What the number means
 
-The CSV stores employment **levels**. The figure ADP publishes each month is the
-**month over month change in the seasonally adjusted level**, that is
-`NER_SA.diff()`. The headline series is the rows where `agg_RIS == "National"`,
-`category == "U.S."`, and `timestep == "M"`. That is what every command works on.
+The data file stores employment **levels** (how many people are employed). The
+number ADP reports each month is the **change from last month in the seasonally
+adjusted level**, which in code is `NER_SA.diff()`. The headline series is the
+rows where `agg_RIS == "National"`, `category == "U.S."`, and `timestep == "M"`.
+Every command works on that series.
 
-## Approach and key tradeoffs
+## Approach and main choices
 
-- **Forecast the SA change, not the level.** The level is strongly trending, so a
-  trend line on the level would look accurate while hiding the real signal. We
-  forecast the change (`chg_sa`) and reconstruct the level by adding the predicted
-  change to the last known level.
-- **Simple baselines, default picked once by backtest.** We ship four models
-  (`naive`, `seasonal_naive`, `mean`, `ewma`), all numpy and pandas. Rather than
-  re-running an auto select on every call, we ran the backtest once during
-  development, saw which model had the lowest RMSE, and hardcoded it as the
-  default for `forecast`. See the results below.
-- **Seasonally adjusted over not adjusted.** `NER_SA` already removes month of
-  year effects, so the model does not need to learn seasonality. Any seasonal
-  component estimated on the SA change comes out small, which is a sanity check,
-  not a bug.
-- **Download once, then offline.** The archive is fetched a single time into
-  `data/` and reused. `--input` and `--url` are first class so a rotated artifact
-  path or an air gapped machine is no problem.
-- **Licensing.** `license.txt` in the archive states the data is ADP's property
-  and may not be reproduced commercially, so the raw CSV and zip are **not
-  committed**. `data/` is gitignored. The only data in the repo is
-  `tests/fixtures/mini_history.csv`, a tiny long format file we wrote by hand (not
-  real ADP data) so the tests run offline.
+- **Predict the change, not the level.** The level keeps climbing over time, so a
+  line drawn through it always looks good and hides what is really going on. We
+  predict the monthly change instead, then add it back to the last known level to
+  get the predicted level.
+- **Simple models, default chosen once.** There are four models (`naive`,
+  `seasonal_naive`, `mean`, `ewma`), all built with numpy and pandas. Instead of
+  re-testing them on every run, we tested them once during development, saw which
+  one was most accurate, and set that as the default. The results are below.
+- **Use the seasonally adjusted numbers.** The `NER_SA` column already removes the
+  usual month to month seasonal pattern, so the model does not have to learn it.
+- **Download once, then work offline.** The data only changes once a month, so
+  downloading it again on every command is a waste. It makes the tool slow and
+  puts needless load on ADP's server. Saving one copy and reusing it is faster,
+  works without a connection, and is kinder to the host. The `--input` and `--url`
+  flags also let you point at a saved file or a new link if the download address
+  ever changes.
+- **The raw data is not in this repo.** The license file inside the download says
+  the data belongs to ADP and cannot be reproduced commercially, so the csv and
+  zip are not committed and the `data/` folder is gitignored. The only data in the
+  repo is `tests/fixtures/mini_history.csv`, a tiny made up file we wrote by hand
+  so the tests can run offline. It is not real ADP data.
 
-## How accuracy was evaluated, and the results
+## How accuracy was measured, and the results
 
-Evaluation is a walk-forward, expanding window, one step ahead backtest: for each
-month we train on all prior data, predict the next change, and compare to the
-actual. No training slice ever includes the point being predicted (there is an
-assertion in the loop guarding against leakage). Metrics, in thousands of jobs:
+We test each model by walking through history one month at a time. At every step
+the model only sees the past, predicts the next month, and we compare that
+prediction to what actually happened. The model never sees the month it is trying
+to predict (there is a check in the code that guarantees this). The scores, in
+thousands of jobs:
 
 ```
 model              MAE (k)  RMSE (k)   dir. acc.
@@ -81,15 +88,16 @@ mean                 124.8     261.3         89%
 seasonal_naive       203.2     400.3         84%
 ```
 
-**`naive` wins** on all three metrics, so it is the hardcoded default for
-`forecast`. This is honest about how hard the series is to beat: an already
-seasonally adjusted monthly change series behaves close to a random walk, so
-carrying the last change forward is tough competition for anything more elaborate.
-The exponentially weighted model is the strongest of the alternatives and is the
-most explainable, but it does not beat the naive baseline here. Directional
-accuracy is high across the board because the series spends most months positive.
+MAE is the average miss. RMSE is like MAE but punishes big misses more.
+Directional accuracy is how often we got the up or down direction right.
 
-(Regenerate this table any time with `adp evaluate`.)
+**`naive` wins** on all three, so it is the default. Being honest: this series is
+hard to beat. The monthly change moves almost at random, so just repeating last
+month's change is a strong baseline. The `ewma` model is the best of the rest and
+the easiest to explain, but it still does not beat `naive` here. Direction
+accuracy is high for everyone because the number is positive most months.
+
+You can recreate this table any time with `adp evaluate`.
 
 ## Tradeoffs
 
@@ -99,17 +107,14 @@ analysis of these architectural choices, including why heavier ML libraries were
 omitted and how the backtest informed the system design, can be found in the
 [tradeoff section](TRADEOFFS.md).
 
-## What I would build next with another week
+## What I would add with more time
 
-- A small AR or lagged regression with `numpy.linalg.lstsq`, to test whether any
-  linear structure actually beats the naive baseline on the backtest.
-- Bring in the weekly series, or the industry and establishment size breakdowns,
-  as features.
-- Real seasonal modeling on the NSA series, for comparison against the SA path.
-- Proper prediction intervals via residual bootstrapping instead of a single
-  error standard deviation.
-- A small backtest plot of predicted versus actual.
-- Auto discovery of the newest artifact path so the default URL never goes stale.
+- A small regression using `numpy.linalg.lstsq` to see if it beats `naive`.
+- The weekly series, or the industry and company size breakdowns, as extra inputs.
+- Seasonal modeling on the raw (not adjusted) numbers, to compare.
+- Better prediction ranges built by resampling past errors.
+- A simple chart of predicted versus actual.
+- Auto detecting the newest download link so the default never goes out of date.
 
 ## Development
 
@@ -118,9 +123,9 @@ pip install -e ".[dev]"
 pytest
 ```
 
-Tests are fully offline. The network is mocked for the download tests, and the
-hand made `mini_history.csv` fixture (zipped on the fly when a test needs a zip)
-backs everything else. No test hits the real URL.
+The tests run fully offline. The download is faked in the tests, and the small
+hand made `mini_history.csv` file backs the rest. No test ever calls the real
+download link.
 
 Changed code is reviewed with the CodeRabbit CLI (`coderabbit review --agent`)
 before being committed.

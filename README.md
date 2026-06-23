@@ -91,6 +91,14 @@ accuracy is high across the board because the series spends most months positive
 
 (Regenerate this table any time with `adp evaluate`.)
 
+## Tradeoffs
+
+I deliberately chose to use standard library argparse and pandas to prioritize
+system stability, offline reliability, and minimal dependency bloat. A detailed
+analysis of these architectural choices, including why heavier ML libraries were
+omitted and how the backtest informed the system design, can be found in the
+[tradeoff section](TRADEOFFS.md).
+
 ## What I would build next with another week
 
 - A small AR or lagged regression with `numpy.linalg.lstsq`, to test whether any

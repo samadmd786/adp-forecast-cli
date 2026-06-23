@@ -1,6 +1,6 @@
 """Command line interface for the ADP NER tracker.
 
-Ships ``history``, ``forecast``, and ``evaluate``. Phase 3 adds ``explain``.
+Ships ``history``, ``forecast``, ``evaluate``, and ``explain``.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import sys
 
 from adp_ner.backtest import BacktestError, evaluate_all, make_forecast
 from adp_ner.data import DEFAULT_URL, DataError, load
+from adp_ner.explain import build_explanation, render_explanation
 from adp_ner.models import DEFAULT_SPAN, DEFAULT_WINDOW, MODEL_NAMES, ModelError, prepare_changes
 from adp_ner.series import SeriesError, national_monthly
 
@@ -76,6 +77,20 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Emit machine readable JSON.")
     _add_source_args(ev)
     ev.set_defaults(func=cmd_evaluate)
+
+    ex = sub.add_parser("explain", help="Explain the current forecast in plain language.")
+    ex.add_argument("--model", choices=list(MODEL_NAMES), default=DEFAULT_MODEL,
+                    help=f"Model to explain (default {DEFAULT_MODEL}).")
+    ex.add_argument("--window", type=int, default=DEFAULT_WINDOW,
+                    help=f"Trailing window for the mean model (default {DEFAULT_WINDOW}).")
+    ex.add_argument("--span", type=int, default=DEFAULT_SPAN,
+                    help=f"Span for the ewma model (default {DEFAULT_SPAN}).")
+    ex.add_argument("--interval", type=float, default=1.0,
+                    help="Band multiplier z on the backtest error std (default 1.0).")
+    ex.add_argument("--json", dest="as_json", action="store_true",
+                    help="Emit machine readable JSON.")
+    _add_source_args(ex)
+    ex.set_defaults(func=cmd_explain)
 
     return parser
 
@@ -226,6 +241,21 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
     for name, row in table.iterrows():
         print(f"{name:<16}{row['MAE'] / 1000:>10.1f}{row['RMSE'] / 1000:>10.1f}"
             f"{row['directional_accuracy']:>12.0%}")
+    return 0
+
+
+def cmd_explain(args: argparse.Namespace) -> int:
+    """Print a plain language rationale for the current forecast."""
+    series = _load_series(args)
+    fields = build_explanation(
+        series, model=args.model, window=args.window,
+        span=args.span, z=args.interval,
+    )
+
+    if args.as_json:
+        print(json.dumps(fields, indent=2))
+    else:
+        print(render_explanation(fields), end="")
     return 0
 
 

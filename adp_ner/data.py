@@ -7,9 +7,9 @@ download lands in a gitignored ``data/`` directory and is fetched exactly once.
 from __future__ import annotations
 
 import os
-import urllib.error
-import urllib.request
+import subprocess
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -20,6 +20,8 @@ DEFAULT_URL = (
 
 CSV_MEMBER = "ADP_NER_history.csv"
 ZIP_NAME = "ADP_NER_history.zip"
+# Records when the data was last downloaded so a stale month triggers a refresh.
+TIMESTAMP_NAME = "ADP_NER_history.timestamp"
 
 REQUIRED_COLUMNS = ["timestep", "agg_RIS", "category", "date", "NER", "NER_SA"]
 
@@ -28,14 +30,39 @@ class DataError(Exception):
     """Raised when downloading, extracting, or parsing the data fails."""
 
 
+def _timestamp_is_current_month(timestamp_path: Path) -> bool:
+    """Return True if the timestamp file records a download from this month.
+
+    The ADP report is published monthly, so anything stamped in the current
+    calendar month is considered fresh; anything older (or unreadable) is stale.
+    """
+    try:
+        stamp = datetime.fromisoformat(timestamp_path.read_text().strip())
+    except (OSError, ValueError):
+        return False
+    now = datetime.now()
+    return (stamp.year, stamp.month) == (now.year, now.month)
+
+
+def _curl_download(url: str, dest: str | os.PathLike) -> None:
+    """Download ``url`` to ``dest`` using curl, raising on any failure."""
+    subprocess.run(
+        ["curl", "--fail", "--silent", "--show-error", "--location",
+         "--output", str(dest), url],
+        check=True,
+    )
+
+
 def fetch(
     url: str = DEFAULT_URL, data_dir: str = "data", local_path: str | None = None
 ) -> Path:
-    """Return a path to the ADP archive, downloading it once if needed.
+    """Return a path to the ADP data, downloading it when the cache is stale.
 
     If ``local_path`` is given it is used directly and the network is never
-    touched. Otherwise the zip is cached in ``data_dir`` and downloaded only on
-    the first run when it is not already present.
+    touched. Otherwise the already-extracted CSV in ``data_dir`` is reused as
+    long as its download timestamp falls in the current month; when the CSV is
+    missing or the timestamp is from an earlier month the archive is downloaded
+    afresh with curl and a new timestamp is written.
     """
     if local_path is not None:
         path = Path(local_path)
@@ -44,15 +71,19 @@ def fetch(
         return path
 
     dest_dir = Path(data_dir)
-    zip_path = dest_dir / ZIP_NAME
-    if zip_path.exists():
-        return zip_path
+    csv_path = dest_dir / CSV_MEMBER
+    timestamp_path = dest_dir / TIMESTAMP_NAME
+
+    # Reuse the downloaded CSV while it is still from the current month.
+    if csv_path.exists() and _timestamp_is_current_month(timestamp_path):
+        return csv_path
 
     dest_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = dest_dir / ZIP_NAME
     tmp_path = zip_path.with_suffix(zip_path.suffix + ".part")
     try:
-        urllib.request.urlretrieve(url, tmp_path)
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
+        _curl_download(url, tmp_path)
+    except (subprocess.CalledProcessError, OSError) as exc:
         if tmp_path.exists():
             tmp_path.unlink()
         raise DataError(
@@ -61,6 +92,7 @@ def fetch(
         ) from exc
 
     os.replace(tmp_path, zip_path)
+    timestamp_path.write_text(datetime.now().isoformat())
     return zip_path
 
 
@@ -131,9 +163,10 @@ def load(
 ) -> pd.DataFrame:
     """Convenience pipeline: fetch, extract if needed, and parse to a DataFrame."""
     if refresh and local_path is None:
-        zip_path = Path(data_dir) / ZIP_NAME
-        if zip_path.exists():
-            zip_path.unlink()
+        # Drop the timestamp so fetch treats the cache as stale and re-downloads.
+        timestamp_path = Path(data_dir) / TIMESTAMP_NAME
+        if timestamp_path.exists():
+            timestamp_path.unlink()
 
     source = fetch(url=url, data_dir=data_dir, local_path=local_path)
     source = Path(source)

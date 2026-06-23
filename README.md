@@ -6,19 +6,24 @@ prediction in plain words. The forecasting uses only numpy and pandas. The data
 is a single monthly series that is already seasonally adjusted, so simple methods
 work well and a heavy library is not needed.
 
-## Install and run
+## First time setup
 
-You need Python 3.10 or newer. From a fresh clone:
+You need Python 3.10 or newer, and `curl` on your PATH (it ships with macOS and
+most Linux distributions). From a fresh clone:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+python3 -m venv .venv          # create an isolated environment
+source .venv/bin/activate       # activate it (do this in every new shell)
+pip install -e .                # install the `adp` command
 ```
 
-Then try the four commands. The first run downloads the data once into a `data/`
-folder (which is gitignored). After that, every run reuses the saved copy and
-works offline.
+That installs the `adp` command into the virtual environment. The system Python
+on recent macOS and Linux is "externally managed" (PEP 668) and will refuse a
+direct `pip install`, so the virtual environment above is the supported path.
+
+## Running it
+
+With the environment active, run any of the four commands:
 
 ```bash
 adp history --rows 8          # recent published numbers
@@ -27,12 +32,18 @@ adp explain                   # why the forecast is what it is
 adp evaluate                  # how the models score against each other
 ```
 
+The first run downloads the data with `curl` into a `data/` folder (which is
+gitignored) and records a timestamp. The ADP report comes out once a month, so
+every later run that same calendar month reuses the saved copy and works
+offline. The first run of a new month sees the timestamp is stale and downloads
+the latest report automatically.
+
 Every command also takes `--json` for machine readable output, plus three flags
 for where the data comes from:
 
 - `--input PATH` use a local zip or csv instead of downloading
 - `--url URL` use a different download link
-- `--refresh` download a fresh copy even if one is saved
+- `--refresh` download a fresh copy now, even if this month's data is saved
 
 For example, to run fully offline from a file you already have:
 
@@ -60,12 +71,14 @@ Every command works on that series.
   one was most accurate, and set that as the default. The results are below.
 - **Use the seasonally adjusted numbers.** The `NER_SA` column already removes the
   usual month to month seasonal pattern, so the model does not have to learn it.
-- **Download once, then work offline.** The data only changes once a month, so
-  downloading it again on every command is a waste. It makes the tool slow and
-  puts needless load on ADP's server. Saving one copy and reusing it is faster,
-  works without a connection, and is kinder to the host. The `--input` and `--url`
-  flags also let you point at a saved file or a new link if the download address
-  ever changes.
+- **Download once a month, then work offline.** The data only changes once a
+  month, so the saved copy is reused for the rest of the calendar month it was
+  fetched in. A timestamp next to the data tracks when it was downloaded; the
+  first run of a new month sees that the timestamp is stale and re-downloads
+  automatically, while runs within the same month stay fast, offline, and easy
+  on ADP's server. The `--refresh` flag forces a fresh download immediately, and
+  `--input` and `--url` let you point at a saved file or a new link if the
+  download address ever changes.
 - **The raw data is not in this repo.** The license file inside the download says
   the data belongs to ADP and cannot be reproduced commercially, so the csv and
   zip are not committed and the `data/` folder is gitignored. The only data in the

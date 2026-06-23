@@ -7,50 +7,74 @@ from pathlib import Path
 
 import pytest
 
+from datetime import datetime
+
 from adp_ner import data
-from adp_ner.data import DataError, ZIP_NAME
+from adp_ner.data import CSV_MEMBER, DataError, TIMESTAMP_NAME, ZIP_NAME
 
 
-def test_fetch_downloads_once(tmp_path, mini_zip, monkeypatch):
-    """First run with no data dir downloads exactly once and caches the zip."""
+def test_fetch_downloads_when_no_data(tmp_path, mini_zip, monkeypatch):
+    """First run with no data dir downloads with curl and stamps the time."""
     data_dir = tmp_path / "data"
     calls = {"n": 0}
 
-    def fake_retrieve(url, filename):
+    def fake_curl(url, dest):
         calls["n"] += 1
-        Path(filename).write_bytes(mini_zip.read_bytes())
+        Path(dest).write_bytes(mini_zip.read_bytes())
 
-    monkeypatch.setattr(data.urllib.request, "urlretrieve", fake_retrieve)
+    monkeypatch.setattr(data, "_curl_download", fake_curl)
 
     path = data.fetch(url="http://example.test/x.zip", data_dir=str(data_dir))
     assert path == data_dir / ZIP_NAME
     assert path.exists()
     assert calls["n"] == 1
+    # A timestamp from this month is recorded so the next run can reuse the data.
+    assert data._timestamp_is_current_month(data_dir / TIMESTAMP_NAME)
 
 
-def test_fetch_uses_cache_second_run(tmp_path, mini_zip, monkeypatch):
-    """Second run with the zip present does not touch the network."""
+def test_fetch_uses_csv_when_timestamp_is_current_month(tmp_path, mini_csv_path, monkeypatch):
+    """A CSV stamped this month is reused without touching the network."""
     data_dir = tmp_path / "data"
     data_dir.mkdir()
-    (data_dir / ZIP_NAME).write_bytes(mini_zip.read_bytes())
+    (data_dir / CSV_MEMBER).write_bytes(mini_csv_path.read_bytes())
+    (data_dir / TIMESTAMP_NAME).write_text(datetime.now().isoformat())
 
-    def boom(url, filename):
+    def boom(url, dest):
         raise AssertionError("network should not be called when cached")
 
-    monkeypatch.setattr(data.urllib.request, "urlretrieve", boom)
+    monkeypatch.setattr(data, "_curl_download", boom)
+    path = data.fetch(url="http://example.test/x.zip", data_dir=str(data_dir))
+    assert path == data_dir / CSV_MEMBER
+
+
+def test_fetch_redownloads_when_timestamp_is_stale(tmp_path, mini_zip, monkeypatch):
+    """A CSV stamped in an earlier month triggers a fresh download."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / CSV_MEMBER).write_text("stale")
+    # A timestamp from a previous year is always in a different month.
+    (data_dir / TIMESTAMP_NAME).write_text(datetime(2000, 1, 1).isoformat())
+    calls = {"n": 0}
+
+    def fake_curl(url, dest):
+        calls["n"] += 1
+        Path(dest).write_bytes(mini_zip.read_bytes())
+
+    monkeypatch.setattr(data, "_curl_download", fake_curl)
     path = data.fetch(url="http://example.test/x.zip", data_dir=str(data_dir))
     assert path == data_dir / ZIP_NAME
+    assert calls["n"] == 1
 
 
 def test_fetch_download_failure_is_clean(tmp_path, monkeypatch):
     """A failed download raises a clear error and leaves no partial zip."""
     data_dir = tmp_path / "data"
 
-    def fail(url, filename):
-        Path(filename).write_bytes(b"partial")
+    def fail(url, dest):
+        Path(dest).write_bytes(b"partial")
         raise OSError("connection reset")
 
-    monkeypatch.setattr(data.urllib.request, "urlretrieve", fail)
+    monkeypatch.setattr(data, "_curl_download", fail)
     with pytest.raises(DataError) as exc:
         data.fetch(url="http://example.test/x.zip", data_dir=str(data_dir))
     assert "Failed to download" in str(exc.value)

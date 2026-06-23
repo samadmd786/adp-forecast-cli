@@ -143,3 +143,28 @@ valid and both fixed:
 Both fixes used as is. Test count went from 56 to 57. A verify re-run hit the free
 tier rate limit, but the fixes were confirmed by the suite and by inspecting the
 seasonal_naive output directly.
+
+## Session 9: monthly cache freshness and curl download
+
+**Prompt sent:**
+
+> add a timestamp in data folder, check if tdata/ADP_NER_history.csv exist and if
+> the timestamp is not of current month then download csv from internet using curl
+> else use the downloaded csv
+
+**What was done:** Reworked the caching in `data.py`. The old behavior reused the
+data forever as long as the zip was present; now `fetch` reuses the extracted
+`ADP_NER_history.csv` only while a sibling `ADP_NER_history.timestamp` file is from
+the current calendar month, and otherwise downloads a fresh archive with `curl`
+(replacing `urllib.request.urlretrieve`) and writes a new timestamp. Added the
+helpers `_timestamp_is_current_month` and `_curl_download`, changed `--refresh` to
+delete the timestamp so the cache reads as stale, and updated the CLI help text.
+The three fetch tests were rewritten to monkeypatch `_curl_download` and cover the
+fresh download, current-month reuse, and stale-month re-download cases. Full suite
+stayed green at 58 tests. README's setup/run sections were rewritten to document
+the `curl` requirement and the once-a-month refresh.
+
+**Design note:** the ADP report is published monthly, so a calendar-month check is
+the simplest freshness signal that avoids both serving stale data into a new month
+and re-downloading needlessly within a month. This implements the "cache freshness
+checks" idea that `TRADEOFFS.md` had flagged as a better way.

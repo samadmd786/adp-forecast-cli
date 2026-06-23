@@ -116,6 +116,15 @@ omitted and how the backtest informed the system design, can be found in the
 - A simple chart of predicted versus actual.
 - Auto detecting the newest download link so the default never goes out of date.
 
+## AI prompts
+
+This project was built with help from AI, and the prompts are saved so the work
+is reproducible:
+
+- The prompts used with Claude (chat) are in
+  [Claude-ADP employment forecasting CLI tool.md](Claude-ADP%20employment%20forecasting%20CLI%20tool.md).
+- The prompts used with Claude Code are in [PROMPTS.md](PROMPTS.md).
+
 ## Development
 
 ```bash

@@ -3,8 +3,9 @@
 The forecast target is the month over month change in the seasonally adjusted
 employment level (``chg_sa``). Every model is a small, pure function that takes
 the change series (leading NaN already dropped) and returns the next change.
-Only numpy and pandas are used, by design: the series is a single, already
-seasonally adjusted monthly line, so simple baselines are the right tool.
+Only pandas is used here, by design: the series is a single, already seasonally
+adjusted monthly line, so simple baselines are the right tool. (The backtest
+metrics in backtest.py use numpy; the models themselves do not need it.)
 """
 
 from __future__ import annotations

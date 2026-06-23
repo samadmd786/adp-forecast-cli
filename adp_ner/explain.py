@@ -10,7 +10,7 @@ from __future__ import annotations
 import pandas as pd
 
 from adp_ner.backtest import DEFAULT_MIN_TRAIN, evaluate_all, make_forecast
-from adp_ner.models import naive, prepare_changes
+from adp_ner.models import SEASONAL_LAG, naive, prepare_changes
 
 # Section headings, kept as constants so tests can assert each one is present.
 SECTION_MODEL = "Model"
@@ -78,6 +78,18 @@ def build_explanation(series: pd.DataFrame, model: str = "naive", window: int = 
     naive_change = naive(changes)
     vs_naive = fc["predicted_change"] - naive_change
 
+    # The exact value seasonal_naive copies forward: the change SEASONAL_LAG
+    # months back. This is what the seasonal_naive explanation must quote, not
+    # the oldest entry in the recent window.
+    if len(changes) > SEASONAL_LAG:
+        src_date = changes.index[-SEASONAL_LAG]
+        seasonal_source = {
+            "date": src_date.strftime("%Y-%m-%d"),
+            "change": float(changes.iloc[-SEASONAL_LAG]),
+        }
+    else:
+        seasonal_source = None
+
     return {
         "model": model,
         "target_date": fc["target_date"],
@@ -98,6 +110,7 @@ def build_explanation(series: pd.DataFrame, model: str = "naive", window: int = 
         "momentum": momentum,
         "naive_change": naive_change,
         "vs_naive": vs_naive,
+        "seasonal_source": seasonal_source,
     }
 
 
@@ -128,10 +141,10 @@ def _method_sentence(fields: dict) -> str:
             f"were {vals}, giving {_k(point)}."
         )
     if model == "seasonal_naive":
-        copied = recent[0]
+        copied = fields["seasonal_source"]
         return (
             f"The seasonal_naive model copies the change from twelve months "
-            f"earlier. That month's change was {_k(copied['change'])}."
+            f"earlier, which was {copied['date']} at {_k(copied['change'])}."
         )
     return f"The {model} model produced {_k(point)}."
 

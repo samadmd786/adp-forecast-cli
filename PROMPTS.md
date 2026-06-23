@@ -88,3 +88,58 @@ validity, and argument error exit codes). Wrote this `README.md` and `PROMPTS.md
 **Small fix:** the first explain output formatted RMSE with a leading `+` because
 it reused the signed change formatter. Added a separate unsigned `_mag` helper for
 magnitudes like RMSE.
+
+## Session 6: tradeoffs document
+
+**Prompt sent:**
+
+> now write a tradeoff.md to include pro and con of this architecture, I used
+> argparser, numpy and pandas because I have used them earlier and I am
+> comfortable with the syntax and commands but I am sure there might be a better
+> way to do it
+
+**What was done:** Claude wrote `TRADEOFFS.md` organized into Tooling and
+Architecture, each choice as pros and cons with a concrete "a better way might be"
+note (typer for the CLI, statsmodels or scikit-learn for the models, cache
+freshness checks). The user's framing, that the familiar stack was deliberate but
+maybe not optimal, was carried through. Committed on its own.
+
+## Session 7: surface the tradeoffs in the README
+
+**Prompts sent:**
+
+> add a tradeoff section in readme and add a link to this tradeoff.md
+
+> write like this I deliberately chose to use standard library argparse and
+> pandas to prioritize system stability, offline reliability, and minimal
+> dependency bloat. A detailed analysis of these architectural choices, including
+> why heavier ML libraries were omitted and how the backtest informed the system
+> design, can be found in the tradeoff sectiom
+
+**What was done:** Claude first added a short Tradeoffs section to the README
+linking `TRADEOFFS.md`. The user then supplied their own preferred wording, so the
+section was rewritten in that voice (and the "sectiom" typo corrected to
+"section"). Used as dictated. Committed.
+
+## Session 8: code review with CodeRabbit
+
+**Prompt sent:**
+
+> /code-review
+
+**What was done:** Ran the CodeRabbit CLI (`coderabbit review --agent`) against
+the initial commit to cover the whole codebase. It returned two findings, both
+valid and both fixed:
+
+- Major, `explain.py`: the seasonal_naive explanation quoted the oldest entry in
+  the recent six month window (six months back) instead of the change twelve
+  months back that the model actually copies. The forecast number was correct but
+  the rationale cited the wrong source month. Fixed by adding a `seasonal_source`
+  field built from `changes.iloc[-SEASONAL_LAG]` and quoting it, plus a regression
+  test pinning the source to twelve months before the target.
+- Minor, `models.py`: the module docstring claimed numpy and pandas were both used,
+  but the module imports only pandas. Corrected the docstring.
+
+Both fixes used as is. Test count went from 56 to 57. A verify re-run hit the free
+tier rate limit, but the fixes were confirmed by the suite and by inspecting the
+seasonal_naive output directly.

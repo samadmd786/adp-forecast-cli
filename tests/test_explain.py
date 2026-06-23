@@ -53,6 +53,18 @@ def test_explain_naive_equals_naive_baseline(fixture_series):
     assert fields["vs_naive"] == pytest.approx(0.0)
 
 
+def test_seasonal_naive_quotes_twelve_months_back(fixture_series):
+    """The seasonal_naive explanation copies the change from 12 months earlier."""
+    fields = build_explanation(fixture_series, model="seasonal_naive")
+    src = fields["seasonal_source"]
+    # The quoted source value must equal the seasonal_naive forecast itself.
+    assert src["change"] == pytest.approx(fields["predicted_change"])
+    # And its date is exactly 12 months before the target month.
+    assert src["date"] == "2024-07-01"
+    assert fields["target_date"] == "2025-07-01"
+    assert src["date"] in render_explanation(fields)
+
+
 def test_explain_fields_have_expected_keys(fixture_series):
     """The structured fields expose the keys the JSON output relies on."""
     fields = build_explanation(fixture_series, model="ewma")

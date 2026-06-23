@@ -121,3 +121,6 @@ pytest
 Tests are fully offline. The network is mocked for the download tests, and the
 hand made `mini_history.csv` fixture (zipped on the fly when a test needs a zip)
 backs everything else. No test hits the real URL.
+
+Changed code is reviewed with the CodeRabbit CLI (`coderabbit review --agent`)
+before being committed.

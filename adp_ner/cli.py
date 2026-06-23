@@ -28,7 +28,7 @@ def _add_source_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--url", default=DEFAULT_URL,
                         help="Override the default download URL.")
     parser.add_argument("--refresh", action="store_true",
-                        help="Force a fresh download even if the zip is cached.")
+                        help="Force a fresh download even if this month's data is cached.")
 
 
 def build_parser() -> argparse.ArgumentParser:
